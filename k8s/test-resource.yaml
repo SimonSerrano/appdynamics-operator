@@ -1,0 +1,6 @@
+apiVersion: com.marmouset/v1
+kind: AppdynamicsOperatorCustomResource
+metadata:
+  name: test1
+spec:
+  value: test
