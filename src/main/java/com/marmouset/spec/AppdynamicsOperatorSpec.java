@@ -1,5 +1,6 @@
 package com.marmouset.spec;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.marmouset.utils.Constant;
 
 public class AppdynamicsOperatorSpec {
@@ -7,6 +8,7 @@ public class AppdynamicsOperatorSpec {
     private AppDynamicsAgentSpec agent = new AppDynamicsAgentSpec();
     private String initContainerName = Constant.K8S_DEFAULT_INIT_CONTAINER_NAME;
 
+    @JsonIgnore
     public String getConfigMapName() {
         return Constant.K8S_CONFIG_MAP_NAME;
     }

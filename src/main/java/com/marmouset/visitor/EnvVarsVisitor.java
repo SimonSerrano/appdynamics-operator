@@ -63,7 +63,7 @@ public class EnvVarsVisitor implements Visitor<DeploymentBuilder> {
             .withValue(appName)
             .build(),
         new EnvVarBuilder()
-            .withName(Constant.APPDYN_ENV_VAR_AGENT_APPLICATION_NAME)
+            .withName(Constant.APPDYN_ENV_VAR_AGENT_TIER_NAME)
             .withValue(namespace)
             .build());
   }

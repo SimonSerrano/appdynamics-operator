@@ -4,6 +4,7 @@ import io.javaoperatorsdk.operator.api.reconciler.Reconciler;
 import io.javaoperatorsdk.operator.api.reconciler.UpdateControl;
 import io.javaoperatorsdk.operator.processing.event.source.EventSource;
 import io.javaoperatorsdk.operator.processing.event.source.informer.InformerEventSource;
+import io.fabric8.kubernetes.api.model.ConfigMap;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.javaoperatorsdk.operator.api.config.informer.InformerEventSourceConfiguration;
@@ -11,12 +12,16 @@ import io.javaoperatorsdk.operator.api.reconciler.Context;
 import io.javaoperatorsdk.operator.api.reconciler.ControllerConfiguration;
 import io.javaoperatorsdk.operator.api.reconciler.ErrorStatusUpdateControl;
 import io.javaoperatorsdk.operator.api.reconciler.EventSourceContext;
+
 import java.util.List;
+import java.util.Objects;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.marmouset.AppdynamicsOperatorCustomResource;
 import com.marmouset.utils.Constant;
+import com.marmouset.visitor.ConfigMapVisitor;
 import com.marmouset.visitor.EnvVarsVisitor;
 import com.marmouset.visitor.InitContainerVisitor;
 
@@ -72,16 +77,27 @@ public class AppdynamicsOperatorReconciler implements Reconciler<AppdynamicsOper
 
       var ns = deployment.getMetadata().getNamespace();
 
-      var desired = deployment.edit().accept(
+      var desiredDeployment = deployment.edit().accept(
           new InitContainerVisitor(appdynOpCR),
           new EnvVarsVisitor(
               appdynOpCR,
               deployment.getMetadata().getLabels().get(Constant.K8S_DEPLOYMENT_APP_NAME),
               ns))
           .build();
-      client.resource(desired).update();
+      client.resource(desiredDeployment).update();
 
-      var configMap = client.configMaps().inNamespace(ns).withName(appdynOpCR.getSpec().getConfigMapName());
+      log.debug("Adding config map to namespace {}", ns);
+
+      var configMap = client.configMaps().inNamespace(ns).withName(appdynOpCR.getSpec().getConfigMapName()).get();
+
+      if (Objects.isNull(configMap)) {
+        log.debug("Config map {} does not exist in namespace {}, creating it", appdynOpCR.getSpec().getConfigMapName(),
+            ns);
+        configMap = new ConfigMap();
+      }
+
+      var desiredConfigMap = configMap.edit().accept(new ConfigMapVisitor(appdynOpCR.getSpec(), ns)).build();
+      client.resource(desiredConfigMap).update();
     }
 
     log.info("Deployment {} does not have annotation {} or is not set to true, instrumentation is disabled",

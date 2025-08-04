@@ -5,8 +5,6 @@ import io.fabric8.kubernetes.api.model.ContainerBuilder;
 import io.fabric8.kubernetes.api.model.EnvFromSourceBuilder;
 import io.fabric8.kubernetes.api.model.EnvVarBuilder;
 import io.fabric8.kubernetes.api.model.LabelSelectorBuilder;
-import io.fabric8.kubernetes.api.model.Namespace;
-import io.fabric8.kubernetes.api.model.NamespaceBuilder;
 import io.fabric8.kubernetes.api.model.ObjectMetaBuilder;
 import io.fabric8.kubernetes.api.model.PodSpecBuilder;
 import io.fabric8.kubernetes.api.model.PodTemplateSpecBuilder;
@@ -35,9 +33,8 @@ class AppdynamicsOperatorReconcilerIntegrationTest {
   private static final String DEPLOYMENT_NAME = "deployment-test";
   private static final String OPERATOR_CRD_NAME = "crd-test";
   private static final String APP_NAME = "TestApp";
-  private static final String IMAGE = "";
-  private static final String COMMAND = "";
-  private static final String NS = "default";
+  private static final String IMAGE = "appdyn/java-agent";
+  private static final String COMMAND = "test";
   private static final String CONTROLLER = "my-controller.com";
   private static final String CONTROLLER_PORT = "8080";
 
@@ -49,8 +46,7 @@ class AppdynamicsOperatorReconcilerIntegrationTest {
   @Test
   void shouldInjectJavaAgentToDeploymentTemplate() {
     extension.create(createAppDynOperatorCRD());
-    var ns = createDefaultNamespace();
-    var deployment = extension.create(createDeploymentWithoutLabels(ns));
+    var deployment = extension.create(createDeploymentWithoutLabels());
 
     await().untilAsserted(() -> {
       var dep = extension.get(Deployment.class, DEPLOYMENT_NAME);
@@ -60,18 +56,20 @@ class AppdynamicsOperatorReconcilerIntegrationTest {
 
     var deploymentLabels = Map.of(Constant.K8S_DEPLOYMENT_APP_NAME, APP_NAME);
     var deploymentAnnotations = Map.of(Constant.K8S_DEPLOYMENT_INJECT_FLAG, "true");
-    deployment.setMetadata(
-        new ObjectMetaBuilder()
-            .withName(DEPLOYMENT_NAME)
-            .withLabels(deploymentLabels)
-            .withAnnotations(deploymentAnnotations)
-            .build());
+    deployment = deployment.edit()
+        .withMetadata(
+            new ObjectMetaBuilder()
+                .withName(DEPLOYMENT_NAME)
+                .withLabels(deploymentLabels)
+                .withAnnotations(deploymentAnnotations)
+                .build())
+        .build();
 
     deployment = extension.replace(deployment);
 
     await().untilAsserted(this::assertInitContainerIsSet);
     await().untilAsserted(this::configMapIsReferenced);
-    await().untilAsserted(this::envVarsAreSet);
+    await().untilAsserted(() -> envVarsAreSet(extension.getNamespace()));
     await().untilAsserted(this::configMapIsSet);
   }
 
@@ -103,7 +101,7 @@ class AppdynamicsOperatorReconcilerIntegrationTest {
             .build());
   }
 
-  private void envVarsAreSet() {
+  private void envVarsAreSet(String namespace) {
     var dep = extension.get(Deployment.class, DEPLOYMENT_NAME);
     assertThat(dep).isNotNull();
     var containers = dep.getSpec().getTemplate().getSpec().getContainers();
@@ -113,7 +111,7 @@ class AppdynamicsOperatorReconcilerIntegrationTest {
     assertThat(envs).hasSize(2);
     assertThat(envs).contains(
         new EnvVarBuilder().withName(Constant.APPDYN_ENV_VAR_AGENT_APPLICATION_NAME).withValue(APP_NAME).build(),
-        new EnvVarBuilder().withName(Constant.APPDYN_ENV_VAR_AGENT_TIER_NAME).withValue(NS).build());
+        new EnvVarBuilder().withName(Constant.APPDYN_ENV_VAR_AGENT_TIER_NAME).withValue(namespace).build());
   }
 
   private void assertInitContainerIsSet() {
@@ -127,20 +125,11 @@ class AppdynamicsOperatorReconcilerIntegrationTest {
     assertThat(initContainer.getCommand()).isEqualTo(List.of(COMMAND));
   }
 
-  private Namespace createDefaultNamespace() {
-    return new NamespaceBuilder()
-        .withNewMetadata()
-        .withName(NS)
-        .endMetadata()
-        .build();
-  }
-
-  private Deployment createDeploymentWithoutLabels(Namespace namespace) {
+  private Deployment createDeploymentWithoutLabels() {
     var deployment = new DeploymentBuilder();
     deployment.withMetadata(
         new ObjectMetaBuilder()
             .withName(DEPLOYMENT_NAME)
-            .withNamespace(namespace.getMetadata().getName())
             .build())
         .withSpec(
             new DeploymentSpecBuilder()
@@ -180,11 +169,11 @@ class AppdynamicsOperatorReconcilerIntegrationTest {
     var resource = new AppdynamicsOperatorCustomResource();
     resource.setMetadata(new ObjectMetaBuilder()
         .withName(OPERATOR_CRD_NAME)
-        .withNamespace(NS)
         .build());
-    resource.setSpec(new AppdynamicsOperatorSpec());
-    resource.getSpec().setController(controllerSpec);
-    resource.getSpec().setAgent(agentSpec);
+    var opSpec = new AppdynamicsOperatorSpec();
+    opSpec.setAgent(agentSpec);
+    opSpec.setController(controllerSpec);
+    resource.setSpec(opSpec);
 
     return resource;
   }
