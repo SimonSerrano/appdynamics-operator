@@ -5,6 +5,7 @@ import io.javaoperatorsdk.operator.api.reconciler.UpdateControl;
 import io.javaoperatorsdk.operator.processing.event.source.EventSource;
 import io.javaoperatorsdk.operator.processing.event.source.informer.InformerEventSource;
 import io.fabric8.kubernetes.api.model.ConfigMap;
+import io.fabric8.kubernetes.api.model.ConfigMapBuilder;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.javaoperatorsdk.operator.api.config.informer.InformerEventSourceConfiguration;
@@ -93,11 +94,12 @@ public class AppdynamicsOperatorReconciler implements Reconciler<AppdynamicsOper
       if (Objects.isNull(configMap)) {
         log.debug("Config map {} does not exist in namespace {}, creating it", appdynOpCR.getSpec().getConfigMapName(),
             ns);
-        configMap = new ConfigMap();
+        client.resource(new ConfigMapBuilder().accept(new ConfigMapVisitor(appdynOpCR.getSpec(), ns)).build()).create();
+      } else {
+        var desiredConfigMap = configMap.edit().accept(new ConfigMapVisitor(appdynOpCR.getSpec(), ns)).build();
+        client.resource(desiredConfigMap).update();
       }
 
-      var desiredConfigMap = configMap.edit().accept(new ConfigMapVisitor(appdynOpCR.getSpec(), ns)).build();
-      client.resource(desiredConfigMap).update();
     }
 
     log.info("Deployment {} does not have annotation {} or is not set to true, instrumentation is disabled",
