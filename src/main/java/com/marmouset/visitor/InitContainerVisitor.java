@@ -4,7 +4,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.marmouset.AppdynamicsOperatorCustomResource;
-import com.marmouset.reconciler.AppdynamicsOperatorReconciler;
 
 import io.fabric8.kubernetes.api.builder.Visitor;
 import io.fabric8.kubernetes.api.model.apps.DeploymentBuilder;
@@ -22,14 +21,20 @@ public class InitContainerVisitor implements Visitor<DeploymentBuilder> {
   @Override
   public void visit(DeploymentBuilder builder) {
     // Add an init container to the deployment
+    var name = customResource.getSpec().getInitContainerName();
+    var image = customResource.getSpec().getAgent().getJavaAgentImage();
+    var command = customResource.getSpec().getAgent().getInitContainerCommand();
+    log.debug("Adding init container with name {}, image {} and command {}", name, image, command);
     builder.editSpec()
         .editTemplate()
         .editSpec()
         .addNewInitContainer()
-        .withName(customResource.getSpec().getInitContainerName())
-        .withImage(customResource.getSpec().getAgent().getJavaAgentImage())
-        .withCommand(customResource.getSpec().getAgent().getInitContainerCommand())
+        .withName(name)
+        .withImage(image)
+        .withCommand(command)
         .endInitContainer()
+        .endSpec()
+        .endTemplate()
         .endSpec();
   }
 

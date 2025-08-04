@@ -10,7 +10,11 @@ import io.javaoperatorsdk.operator.processing.event.ResourceID;
 import io.javaoperatorsdk.operator.processing.event.source.EventSource;
 import io.javaoperatorsdk.operator.processing.event.source.informer.InformerEventSource;
 import io.javaoperatorsdk.operator.processing.event.source.informer.Mappers;
+import io.fabric8.kubernetes.api.model.ContainerBuilder;
+import io.fabric8.kubernetes.api.model.ObjectMetaBuilder;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
+import io.fabric8.kubernetes.api.model.apps.DeploymentBuilder;
+import io.fabric8.kubernetes.client.KubernetesClient;
 import io.javaoperatorsdk.operator.api.config.informer.InformerConfiguration;
 import io.javaoperatorsdk.operator.api.config.informer.InformerEventSourceConfiguration;
 import io.javaoperatorsdk.operator.api.reconciler.Constants;
@@ -29,30 +33,18 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.marmouset.AppdynamicsOperatorCustomResource;
-import com.marmouset.dependentresource.DeploymentDependentResource;
+import com.marmouset.visitor.EnvVarsVisitor;
+import com.marmouset.visitor.InitContainerVisitor;
 
 @ControllerConfiguration
 public class AppdynamicsOperatorReconciler implements Reconciler<AppdynamicsOperatorCustomResource> {
 
-  public static final String DEPLOYMENT_NAME = "deployment";
   public static final String DEPLOYMENT_INJECT_FLAG = "com.appdynamics/inject-java";
   public static final String DEPLOYMENT_APP_NAME = "com.appdynamics/appname";
 
   private static final Logger log = LoggerFactory.getLogger(AppdynamicsOperatorReconciler.class);
 
-  private DeploymentDependentResource deploymentDependent;
-
   public AppdynamicsOperatorReconciler() {
-    deploymentDependent = new DeploymentDependentResource();
-    // deploymentDependent.configureWith(
-    // new KubernetesDependentResourceConfigBuilder<Deployment>()
-    // .withKubernetesDependentInformerConfig(
-    // InformerConfiguration.builder(
-    // deploymentDependent.resourceType())
-    // .withLabelSelector(DEPLOYMENT_LABEL_SELECTOR)
-    // .withNamespaces(Constants.WATCH_ALL_NAMESPACE_SET)
-    // .build())
-    // .build());
   }
 
   @Override
@@ -60,27 +52,7 @@ public class AppdynamicsOperatorReconciler implements Reconciler<AppdynamicsOper
       EventSourceContext<AppdynamicsOperatorCustomResource> context) {
     EventSource<Deployment, AppdynamicsOperatorCustomResource> deploymentEventSource = new InformerEventSource<Deployment, AppdynamicsOperatorCustomResource>(
         InformerEventSourceConfiguration.from(Deployment.class, AppdynamicsOperatorCustomResource.class)
-            // .withSecondaryToPrimaryMapper(Mappers.fromAnnotation(DEPLOYMENT_APP_NAME,
-            // null, null))
-            .withSecondaryToPrimaryMapper(resource -> {
-              final var metadata = resource.getMetadata();
-              if (metadata == null) {
-                return Collections.emptySet();
-              } else {
-                final var map = metadata.getAnnotations();
-                if (map == null) {
-                  return Collections.emptySet();
-                }
-                var name = map.get(DEPLOYMENT_APP_NAME);
-                if (name == null) {
-                  return Collections.emptySet();
-                }
-                var namespace = resource.getMetadata().getNamespace();
-
-                return Set.of(new ResourceID(name, namespace));
-              }
-            })
-            .withLabelSelector(DEPLOYMENT_INJECT_FLAG + "=true," + DEPLOYMENT_APP_NAME)
+            .withLabelSelector(DEPLOYMENT_APP_NAME)
             .build(),
         context);
     return List.of(deploymentEventSource);
@@ -88,11 +60,16 @@ public class AppdynamicsOperatorReconciler implements Reconciler<AppdynamicsOper
 
   public UpdateControl<AppdynamicsOperatorCustomResource> reconcile(AppdynamicsOperatorCustomResource appdynOpCR,
       Context<AppdynamicsOperatorCustomResource> context) {
-    var deploymentOpt = context.getSecondaryResource(Deployment.class);
-    log.debug("Reconciling deployment : {}", deploymentOpt.orElse(null));
-    ReconcileResult<Deployment> result = deploymentDependent.reconcile(appdynOpCR, context);
-    log.debug("Got result while reconciling deployment : {}", result);
-    return UpdateControl.noUpdate();
+    var client = context.getClient();
+    var deployments = client.apps().deployments()
+        .inAnyNamespace()
+        .withLabel(DEPLOYMENT_APP_NAME)
+        .list().getItems();
+
+    log.debug("Found {} deployments with label {}", deployments.size(), DEPLOYMENT_APP_NAME);
+    deployments.forEach((d) -> processDeployment(appdynOpCR, client, d));
+
+    return UpdateControl.patchResource(appdynOpCR);
   }
 
   @Override
@@ -101,6 +78,28 @@ public class AppdynamicsOperatorReconciler implements Reconciler<AppdynamicsOper
       Exception e) {
     log.error(e.getMessage(), e);
     return Reconciler.super.updateErrorStatus(resource, context, e);
+  }
+
+  protected void processDeployment(AppdynamicsOperatorCustomResource appdynOpCR, KubernetesClient client,
+      Deployment deployment) {
+    var annotations = deployment.getMetadata().getAnnotations();
+    if (annotations.containsKey(DEPLOYMENT_INJECT_FLAG)
+        && Boolean.parseBoolean(annotations.get(DEPLOYMENT_INJECT_FLAG))) {
+      log.info("Deployment {} has annotation {}=true, enabling instrumentation", deployment.getMetadata().getName(),
+          DEPLOYMENT_INJECT_FLAG);
+      log.debug("Adding initContainer and env variables to deployment named {}", deployment.getMetadata().getName());
+      var desired = deployment.edit().accept(
+          new InitContainerVisitor(appdynOpCR),
+          new EnvVarsVisitor(appdynOpCR, deployment.getMetadata().getLabels().get(DEPLOYMENT_APP_NAME),
+              deployment.getMetadata().getNamespace()))
+          .build();
+      client.resource(desired).update();
+    }
+
+    log.info("Deployment {} does not have annotation {} or is not set to true, instrumentation is disabled",
+        deployment.getMetadata().getName(),
+        DEPLOYMENT_INJECT_FLAG);
+
   }
 
 }
