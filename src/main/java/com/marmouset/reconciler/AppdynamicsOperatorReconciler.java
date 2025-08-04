@@ -92,7 +92,7 @@ public class AppdynamicsOperatorReconciler implements Reconciler<AppdynamicsOper
       var configMap = client.configMaps().inNamespace(ns).withName(appdynOpCR.getSpec().getConfigMapName()).get();
 
       if (Objects.isNull(configMap)) {
-        log.debug("Config map {} does not exist in namespace {}, creating it", appdynOpCR.getSpec().getConfigMapName(),
+        log.info("Config map {} does not exist in namespace {}, creating it", appdynOpCR.getSpec().getConfigMapName(),
             ns);
         client.resource(new ConfigMapBuilder().accept(new ConfigMapVisitor(appdynOpCR.getSpec(), ns)).build()).create();
       } else {
