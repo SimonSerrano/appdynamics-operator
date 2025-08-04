@@ -1,17 +1,14 @@
 package com.marmouset.spec;
 
+import com.marmouset.utils.Constant;
+
 public class AppdynamicsOperatorSpec {
     private AppDynamicsControllerSpec controller = new AppDynamicsControllerSpec();
     private AppDynamicsAgentSpec agent = new AppDynamicsAgentSpec();
-    private String initContainerName = "attach-appdynamics-java-agent";
-    private String configMapName = "appdynamics-config-map";
+    private String initContainerName = Constant.K8S_DEFAULT_INIT_CONTAINER_NAME;
 
     public String getConfigMapName() {
-        return configMapName;
-    }
-
-    public void setConfigMapName(String configMapName) {
-        this.configMapName = configMapName;
+        return Constant.K8S_CONFIG_MAP_NAME;
     }
 
     public String getInitContainerName() {

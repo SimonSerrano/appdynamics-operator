@@ -20,7 +20,6 @@ public class InitContainerVisitor implements Visitor<DeploymentBuilder> {
 
   @Override
   public void visit(DeploymentBuilder builder) {
-    // Add an init container to the deployment
     var name = customResource.getSpec().getInitContainerName();
     var image = customResource.getSpec().getAgent().getJavaAgentImage();
     var command = customResource.getSpec().getAgent().getInitContainerCommand();

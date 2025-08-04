@@ -3,25 +3,17 @@ package com.marmouset;
 import io.fabric8.kubernetes.api.model.ConfigMap;
 import io.fabric8.kubernetes.api.model.ContainerBuilder;
 import io.fabric8.kubernetes.api.model.EnvFromSourceBuilder;
-import io.fabric8.kubernetes.api.model.EnvVar;
 import io.fabric8.kubernetes.api.model.EnvVarBuilder;
 import io.fabric8.kubernetes.api.model.LabelSelectorBuilder;
 import io.fabric8.kubernetes.api.model.Namespace;
 import io.fabric8.kubernetes.api.model.NamespaceBuilder;
-import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.api.model.ObjectMetaBuilder;
 import io.fabric8.kubernetes.api.model.PodSpecBuilder;
 import io.fabric8.kubernetes.api.model.PodTemplateSpecBuilder;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.api.model.apps.DeploymentBuilder;
 import io.fabric8.kubernetes.api.model.apps.DeploymentSpecBuilder;
-import io.fabric8.kubernetes.client.DefaultKubernetesClient;
-import io.fabric8.kubernetes.client.KubernetesClient;
-import io.fabric8.kubernetes.client.KubernetesClientBuilder;
 import io.javaoperatorsdk.operator.junit.LocallyRunOperatorExtension;
-import io.netty.handler.codec.http.HttpHeaders.Names;
-
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
@@ -29,21 +21,25 @@ import com.marmouset.reconciler.AppdynamicsOperatorReconciler;
 import com.marmouset.spec.AppDynamicsAgentSpec;
 import com.marmouset.spec.AppDynamicsControllerSpec;
 import com.marmouset.spec.AppdynamicsOperatorSpec;
-import com.marmouset.visitor.EnvVarsVisitor;
-
+import com.marmouset.utils.Constant;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 
 class AppdynamicsOperatorReconcilerIntegrationTest {
 
-  public static final String DEPLOYMENT_NAME = "deployment-test";
-  public static final String OPERATOR_CRD_NAME = "crd-test";
-  public static final String INITIAL_VALUE = "access key";
-  public static final String CHANGED_VALUE = "new access key";
+  private static final String ACCESS_KEY = "access key";
+  private static final String ACCOUNT = "account";
+  private static final String DEPLOYMENT_NAME = "deployment-test";
+  private static final String OPERATOR_CRD_NAME = "crd-test";
+  private static final String APP_NAME = "TestApp";
+  private static final String IMAGE = "";
+  private static final String COMMAND = "";
+  private static final String NS = "default";
+  private static final String CONTROLLER = "my-controller.com";
+  private static final String CONTROLLER_PORT = "8080";
 
   @RegisterExtension
   LocallyRunOperatorExtension extension = LocallyRunOperatorExtension.builder()
@@ -51,7 +47,7 @@ class AppdynamicsOperatorReconcilerIntegrationTest {
       .build();
 
   @Test
-  void shouldCreateInitContainerAndEnvVarsMapping() {
+  void shouldInjectJavaAgentToDeploymentTemplate() {
     extension.create(createAppDynOperatorCRD());
     var ns = createDefaultNamespace();
     var deployment = extension.create(createDeploymentWithoutLabels(ns));
@@ -62,8 +58,8 @@ class AppdynamicsOperatorReconcilerIntegrationTest {
       assertThat(dep.getMetadata().getLabels()).isEmpty();
     });
 
-    var deploymentLabels = Map.of("com.appdynamics/appname", "TestApp");
-    var deploymentAnnotations = Map.of("com.appdynamics/inject-java", "true");
+    var deploymentLabels = Map.of(Constant.K8S_DEPLOYMENT_APP_NAME, APP_NAME);
+    var deploymentAnnotations = Map.of(Constant.K8S_DEPLOYMENT_INJECT_FLAG, "true");
     deployment.setMetadata(
         new ObjectMetaBuilder()
             .withName(DEPLOYMENT_NAME)
@@ -74,11 +70,24 @@ class AppdynamicsOperatorReconcilerIntegrationTest {
     deployment = extension.replace(deployment);
 
     await().untilAsserted(this::assertInitContainerIsSet);
-    await().untilAsserted(this::configMapIsSet);
+    await().untilAsserted(this::configMapIsReferenced);
     await().untilAsserted(this::envVarsAreSet);
+    await().untilAsserted(this::configMapIsSet);
   }
 
   private void configMapIsSet() {
+    var configMap = extension.get(ConfigMap.class, Constant.K8S_CONFIG_MAP_NAME);
+    assertThat(configMap).isNotNull();
+    assertThat(configMap.getData()).containsAllEntriesOf(Map.of(
+        Constant.APPDYN_ENV_VAR_CONTROLLER_HOST_NAME, CONTROLLER,
+        Constant.APPDYN_ENV_VAR_CONTROLLER_PORT, CONTROLLER_PORT,
+        Constant.APPDYN_ENV_VAR_CONTROLLER_SSL_ENABLED, "True",
+        Constant.APPDYN_ENV_VAR_AGENT_ACCOUNT_NAME, ACCOUNT,
+        Constant.APPDYN_ENV_VAR_AGENT_ACCOUNT_ACCESS_KEY, ACCESS_KEY,
+        Constant.APPDYN_ENV_VAR_AGENT_NODE_NAME, "${HOSTNAME}"));
+  }
+
+  private void configMapIsReferenced() {
     var dep = extension.get(Deployment.class, DEPLOYMENT_NAME);
     assertThat(dep).isNotNull();
     var containers = dep.getSpec().getTemplate().getSpec().getContainers();
@@ -89,7 +98,7 @@ class AppdynamicsOperatorReconcilerIntegrationTest {
     assertThat(envs).contains(
         new EnvFromSourceBuilder()
             .withNewConfigMapRef()
-            .withName("appdynamics-config-map")
+            .withName(Constant.K8S_CONFIG_MAP_NAME)
             .endConfigMapRef()
             .build());
   }
@@ -103,8 +112,8 @@ class AppdynamicsOperatorReconcilerIntegrationTest {
     var envs = container.getEnv();
     assertThat(envs).hasSize(2);
     assertThat(envs).contains(
-        new EnvVarBuilder().withName(EnvVarsVisitor.APPDYNAMICS_AGENT_APPLICATION_NAME).withValue("TestApp").build(),
-        new EnvVarBuilder().withName(EnvVarsVisitor.APPDYNAMICS_AGENT_TIER_NAME).withValue("default").build());
+        new EnvVarBuilder().withName(Constant.APPDYN_ENV_VAR_AGENT_APPLICATION_NAME).withValue(APP_NAME).build(),
+        new EnvVarBuilder().withName(Constant.APPDYN_ENV_VAR_AGENT_TIER_NAME).withValue(NS).build());
   }
 
   private void assertInitContainerIsSet() {
@@ -113,15 +122,15 @@ class AppdynamicsOperatorReconcilerIntegrationTest {
     var initContainers = dep.getSpec().getTemplate().getSpec().getInitContainers();
     assertThat(initContainers).hasSize(1);
     var initContainer = initContainers.get(0);
-    assertThat(initContainer.getName()).isEqualTo("attach-appdynamics-java-agent");
-    assertThat(initContainer.getImage()).isEqualTo("test/java-agent");
-    assertThat(initContainer.getCommand()).isEqualTo(List.of("test"));
+    assertThat(initContainer.getName()).isEqualTo(Constant.K8S_DEFAULT_INIT_CONTAINER_NAME);
+    assertThat(initContainer.getImage()).isEqualTo(IMAGE);
+    assertThat(initContainer.getCommand()).isEqualTo(List.of(COMMAND));
   }
 
   private Namespace createDefaultNamespace() {
     return new NamespaceBuilder()
         .withNewMetadata()
-        .withName("default")
+        .withName(NS)
         .endMetadata()
         .build();
   }
@@ -161,18 +170,17 @@ class AppdynamicsOperatorReconcilerIntegrationTest {
 
   private AppdynamicsOperatorCustomResource createAppDynOperatorCRD() {
     var controllerSpec = new AppDynamicsControllerSpec();
-    controllerSpec.setHost("my-controller.com");
-    controllerSpec.setPort(8080);
-    controllerSpec.setSsl(true);
+    controllerSpec.setHost(CONTROLLER);
+    controllerSpec.setPort(Integer.parseInt(CONTROLLER_PORT));
     var agentSpec = new AppDynamicsAgentSpec();
-    agentSpec.setAccountAccessKey(INITIAL_VALUE);
-    agentSpec.setAccountName("account");
-    agentSpec.setInitContainerCommand("test");
-    agentSpec.setJavaAgentImage("test/java-agent");
+    agentSpec.setAccountAccessKey(ACCESS_KEY);
+    agentSpec.setAccountName(ACCOUNT);
+    agentSpec.setInitContainerCommand(COMMAND);
+    agentSpec.setJavaAgentImage(IMAGE);
     var resource = new AppdynamicsOperatorCustomResource();
     resource.setMetadata(new ObjectMetaBuilder()
         .withName(OPERATOR_CRD_NAME)
-        .withNamespace("default")
+        .withNamespace(NS)
         .build());
     resource.setSpec(new AppdynamicsOperatorSpec());
     resource.getSpec().setController(controllerSpec);

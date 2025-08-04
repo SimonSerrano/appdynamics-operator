@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.marmouset.AppdynamicsOperatorCustomResource;
+import com.marmouset.utils.Constant;
 
 import io.fabric8.kubernetes.api.builder.Visitor;
 import io.fabric8.kubernetes.api.model.EnvFromSource;
@@ -15,8 +16,6 @@ import io.fabric8.kubernetes.api.model.EnvVarBuilder;
 import io.fabric8.kubernetes.api.model.apps.DeploymentBuilder;
 
 public class EnvVarsVisitor implements Visitor<DeploymentBuilder> {
-  public static final String APPDYNAMICS_AGENT_APPLICATION_NAME = "APPDYNAMICS_AGENT_APPLICATION_NAME";
-  public static final String APPDYNAMICS_AGENT_TIER_NAME = "APPDYNAMICS_AGENT_TIER_NAME";
 
   private static final Logger log = LoggerFactory.getLogger(EnvVarsVisitor.class);
 
@@ -56,15 +55,15 @@ public class EnvVarsVisitor implements Visitor<DeploymentBuilder> {
   }
 
   private List<EnvVar> buildEnvVars() {
-    log.debug("Setting env var {} with value {}", APPDYNAMICS_AGENT_APPLICATION_NAME, appName);
-    log.debug("Setting env var {} with value {}", APPDYNAMICS_AGENT_TIER_NAME, namespace);
+    log.debug("Setting env var {} with value {}", Constant.APPDYN_ENV_VAR_AGENT_APPLICATION_NAME, appName);
+    log.debug("Setting env var {} with value {}", Constant.APPDYN_ENV_VAR_AGENT_TIER_NAME, namespace);
     return List.of(
         new EnvVarBuilder()
-            .withName(APPDYNAMICS_AGENT_APPLICATION_NAME)
+            .withName(Constant.APPDYN_ENV_VAR_AGENT_APPLICATION_NAME)
             .withValue(appName)
             .build(),
         new EnvVarBuilder()
-            .withName(APPDYNAMICS_AGENT_TIER_NAME)
+            .withName(Constant.APPDYN_ENV_VAR_AGENT_APPLICATION_NAME)
             .withValue(namespace)
             .build());
   }

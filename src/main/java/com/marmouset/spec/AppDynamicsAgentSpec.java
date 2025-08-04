@@ -1,10 +1,12 @@
 package com.marmouset.spec;
 
+import com.marmouset.utils.Constant;
+
 public class AppDynamicsAgentSpec {
-  private String javaAgentImage;
+  private String javaAgentImage = Constant.APPDYN_DEFAULT_JAVA_AGENT_IMAGE;
   private String accountName;
   private String accountAccessKey;
-  private String initContainerCommand;
+  private String initContainerCommand = Constant.APPDYN_DEFAULT_JAVA_AGENT_COMMAND;
 
   public String getJavaAgentImage() {
     return javaAgentImage;

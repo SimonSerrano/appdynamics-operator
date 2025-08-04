@@ -1,9 +1,11 @@
 package com.marmouset.spec;
 
+import com.marmouset.utils.Constant;
+
 public class AppDynamicsControllerSpec {
   private String host;
   private int port;
-  private boolean ssl = true;
+  private boolean ssl = Constant.K8S_DEFAULT_APPDYNAMICS_SSL_ENABLED;
 
   public boolean isSsl() {
     return ssl;
