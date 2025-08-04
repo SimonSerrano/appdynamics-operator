@@ -26,7 +26,7 @@ import static org.awaitility.Awaitility.await;
 import java.util.List;
 import java.util.Map;
 
-class AppdynamicsOperatorReconcilerIntegrationTest {
+class AddingInstrumentationIntegrationTest {
 
   private static final String ACCESS_KEY = "access key";
   private static final String ACCOUNT = "account";
